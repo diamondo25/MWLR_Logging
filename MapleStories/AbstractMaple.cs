@@ -19,10 +19,12 @@ namespace MWLR_Logging.MapleStories
         public abstract void sendWorldListReRequest();
         public abstract void handlePackets(Packet packet);
         public string Name { get; set; }
+        protected byte _locale;
 
-        public AbstractMaple(string name)
+        public AbstractMaple(string name, byte pLocale)
         {
             Name = name;
+            _locale = pLocale;
             DataBase.Clear();
         }
 
@@ -58,8 +60,8 @@ namespace MWLR_Logging.MapleStories
                     {
                         diff = Program.Connection.AmountOnline - last;
                     }
-                    var URL = string.Format("http://www.craftnet.nl/total_graph.png?from={0}", Program.CurrentTime);
-                    string msg = string.Format("MapleStory Global has {0:N0} players online at the moment. ({1}) {2}", Program.Connection.AmountOnline, Math.Abs(diff).ToString("N0") + (diff < 0 ? " Left" : " Joined"), URL);
+                    var URL = string.Format("http://www.craftnet.nl/total_graph.png?from={0}", Program.TweetCurrentTime);
+                    string msg = string.Format("{3} has {0:N0} players online at the moment. ({1}) {2}", Program.Connection.AmountOnline, Math.Abs(diff).ToString("N0") + (diff < 0 ? " Left" : " Joined"), URL, MapleServerConnector.GetMapleStoryLocale(_locale));
 
                     if (!Program.CRASHMODE)
                         TwitterClient.Instance.SendMessage(msg);
@@ -73,14 +75,14 @@ namespace MWLR_Logging.MapleStories
             {
                 if (!Program.IgnoreDataTemp && !Program.CRASHMODE)
                 {
-                    DataBase.SaveWorldData(pData);
+                    DataBase.SaveChannels(pData);
                 }
             }
         }
 
         public void TweetCrash(Channel chnl)
         {
-            var URL = string.Format("http://www.craftnet.nl/world_graph.png?worldid={0}&chid={1}&minutes=15&from={2}", chnl.World, chnl.ID, Program.CurrentTime);
+            var URL = string.Format("http://www.craftnet.nl/world_graph.png?worldid={0}&chid={1}&minutes=60&from={2}&locale={3}", chnl.World, chnl.ID, Program.TweetCurrentTime, Name.ToLower());
             SendTweet("{0} crashed(?): from {1:N0} to {2:N0} players online #mscrash @MapleStory {3}", chnl.ChannelName, OldLoads[chnl.ChannelName], chnl.Population, URL);
         }
 
@@ -88,5 +90,7 @@ namespace MWLR_Logging.MapleStories
         {
             TwitterClient.Instance.SendMessage(what, lulz);
         }
+
+        // public abstract void Login();
     }
 }

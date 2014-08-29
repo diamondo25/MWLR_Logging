@@ -15,61 +15,24 @@ namespace MWLR_Logging
 {
     public class DataBase
     {
+        private static bool ENABLE_DATABASE = false;
         public static string ConnectionString { get; private set; }
 
         private static MySqlConnection _connection;
-        private static Timer _timer;
 
         private static string _preparedInsertQuery = START_STRING;
         private const string START_STRING = "INSERT DELAYED INTO log VALUES ";
 
         public static void InitializeDataBase()
         {
+            ENABLE_DATABASE = !System.IO.File.Exists("testing.txt");
+            Logger.WriteLine("Using database: {0}", ENABLE_DATABASE.ToString());
             Connect(Config.Instance.ConnectionData.Username, Config.Instance.ConnectionData.Password, Config.Instance.ConnectionData.Database, Config.Instance.ConnectionData.Host);
-            //mTimer = new Timer(55 * 60 * 100); // every 5.5 minute
-            //mTimer.Elapsed += new ElapsedEventHandler(mTimer_Elapsed);
         }
-
-        static void mTimer_Elapsed(object sender, ElapsedEventArgs e)
-        {
-            Ping();
-        }
-
-        static void Ping()
-        {
-            if (_connection != null)
-            {
-                try
-                {
-                    using (MySqlCommand cmd = new MySqlCommand("SELECT LAST_INSERT_ID();", _connection))
-                    {
-                        using (var reader = cmd.ExecuteReader())
-                        {
-                            if (!reader.Read())
-                            {
-                                Logger.WriteLine("Could not read first line of LAST_INSERT_ID() query... :O");
-                                throw new Exception();
-                            }
-                            reader.Close();
-                        }
-                    }
-                }
-                catch
-                {
-                    Logger.WriteLine("Connection lost to MySQL server... Reconnect!");
-                    Connect();
-                }
-            }
-            else
-            {
-                Logger.WriteLine("Connection was down when we tried to ping... Reconnect!");
-                Connect();
-            }
-        }
-
         public static void Connect(string pUsername, string pPassword, string pDatabase, string pHost, int pPort = 3306)
         {
-            ConnectionString = string.Format("Server={0};Database={1};Username={2};Password={3};Pooling=true;Min Pool Size=4;Max Pool Size=32;Port={4}", pHost, pDatabase, pUsername, pPassword, pPort);
+            if (!ENABLE_DATABASE) return;
+            ConnectionString = string.Format("Server={0};Database={1};Username={2};Password={3};Pooling=true;Min Pool Size=4;Max Pool Size=32;Port={4};CharSet=utf8;", pHost, pDatabase, pUsername, pPassword, pPort);
             Connect();
         }
 
@@ -85,24 +48,32 @@ namespace MWLR_Logging
         {
             if (e.CurrentState == System.Data.ConnectionState.Open)
             {
-                Logger.WriteLine("Connected to MySQL server!");
+                Logger.WriteLine("Connected to MySQL server! Changing timestamp to UTC");
+
+                using (MySqlCommand cmd = new MySqlCommand("SET time_zone = '+00:00';", _connection))
+                {
+                    cmd.ExecuteNonQuery();
+                }
             }
         }
 
         public static void UpdateWorldData(int pID, string pName, int pChannels, int pRibbon, string pMessage)
         {
+            string query = string.Format("INSERT INTO world_data VALUES ({0}, '{1}', {2}, {4}, '{3}') ON DUPLICATE KEY UPDATE world_name = '{1}', channels = {2}, message = '{3}', `state` = {4};\r\n", pID, MySqlHelper.EscapeString(pName), pChannels, MySqlHelper.EscapeString(pMessage), pRibbon + 1);
+            if (!ENABLE_DATABASE) return;
             pRibbon++;
-            using (MySqlCommand cmd = new MySqlCommand(string.Format("INSERT INTO world_data VALUES ({0}, '{1}', {2}, {4}, '{3}') ON DUPLICATE KEY UPDATE world_name = '{1}', channels = {2}, message = '{3}', `state` = {4}", pID, MySqlHelper.EscapeString(pName), pChannels, MySqlHelper.EscapeString(pMessage), pRibbon), _connection))
+            using (MySqlCommand cmd = new MySqlCommand(query, _connection))
             {
                 cmd.ExecuteNonQuery();
             }
         }
 
-        public static void SaveWorldData(List<Channel> pChannels)
+        public static void SaveChannels(List<Channel> pChannels)
         {
+            if (!ENABLE_DATABASE) return;
             foreach (Channel channel in pChannels)
             {
-                _preparedInsertQuery += "(" + channel.World + "," + channel.ID + "," + channel.Population + ",'" + Program.mCurrentDate + "'),";
+                _preparedInsertQuery += "(" + channel.World + "," + channel.ID + "," + channel.Population + ", '" + Program.CurrentDate + "'),";
                 //addition += string.Format("({0},{1},{2},'{3}'),", channel.World, channel.ID, channel.Population, Program.mCurrentDate);
             }
         }
@@ -114,9 +85,9 @@ namespace MWLR_Logging
 
         public static void SaveLawl()
         {
+            if (!ENABLE_DATABASE) return;
             try
             {
-                Ping();
                 if (_preparedInsertQuery.EndsWith(","))
                     _preparedInsertQuery = _preparedInsertQuery.Remove(_preparedInsertQuery.Length - 1, 1);
                 if (!_preparedInsertQuery.StartsWith(START_STRING))
@@ -135,6 +106,7 @@ namespace MWLR_Logging
                 {
                     // MySQL error. Reconnect.
                     Connect();
+                    
                 }
             }
             Clear();
@@ -142,11 +114,13 @@ namespace MWLR_Logging
 
         public static void AddCrash(byte world, byte channel, int load1, int load2)
         {
+            if (!ENABLE_DATABASE) return;
             try
             {
-                MySqlCommand cmd = new MySqlCommand("INSERT INTO crashes VALUES ('" + Program.mCurrentDate + "'," + world + "," + channel + "," + load1 + "," + load2 + ")", _connection);
-                cmd.ExecuteNonQuery();
-                cmd.Dispose();
+                using (MySqlCommand cmd = new MySqlCommand("INSERT INTO crashes VALUES ('" + Program.CurrentDate + "'," + world + "," + channel + "," + load1 + "," + load2 + ")", _connection))
+                {
+                    cmd.ExecuteNonQuery();
+                }
             }
             catch (Exception ex)
             {
@@ -157,6 +131,7 @@ namespace MWLR_Logging
 
         public static void CreateTable()
         {
+            if (!ENABLE_DATABASE) return;
             string query = @"
 CREATE TABLE `crashes` (
   `log` datetime NOT NULL,

@@ -16,9 +16,15 @@ namespace MWLR_Logging
         
         OAuthTokens tokens = new OAuthTokens();
         bool k = false;
+        string mutefile = "mute.txt";
 
         public TwitterClient()
         {
+            if (File.Exists(mutefile))
+            {
+                Logger.WriteLine("No tweeting!");
+                return;
+            }
             string[] keys = File.ReadAllLines("c");
 
             tokens.ConsumerKey = keys[0];
@@ -73,7 +79,7 @@ namespace MWLR_Logging
                 }
                 else
                 {
-                    Logger.WriteLine("Could not post tweet.: {0}", tweetResponse.ErrorMessage);
+                    Logger.WriteLine("Could not post tweet: {0}", tweetResponse.ErrorMessage);
                 }
             }
         }

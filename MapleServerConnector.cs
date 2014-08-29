@@ -79,19 +79,17 @@ namespace MWLR_Logging
             Logger.WriteLine("Received HandShake packet");
             Program.UpdateDate();
 
-            short version = pPacket.ReadShort();
-            string patchLocation = pPacket.ReadString();
-            pPacket.ReadInt();
-            pPacket.ReadInt();
-            byte locale = pPacket.ReadByte();
+            short version = (short)MapleVersion;
+            string patchLocation = MaplePatchLocation;
+            byte locale = MapleLocale;
 
             if (oldPatchLocation == "XD" || (oldVersion == version && oldPatchLocation == patchLocation && oldLocale == locale))
             {
-                TwitterClient.Instance.SendMessage("I just connected with the {0} server. Version: V{1}.{2}", GetMapleStoryLocale(locale), version, patchLocation);
+                TwitterClient.Instance.SendMessage("Connected with the {0} server. Version: V{1}.{2}", GetMapleStoryLocale(locale), version, patchLocation);
             }
             else
             {
-                TwitterClient.Instance.SendMessage("I just connected with the {0} server, and it seems to be updated! From {1}.{2} to V{3}.{4} #Update #MapleStory", GetMapleStoryLocale(locale), oldVersion, oldPatchLocation, version, patchLocation);
+                TwitterClient.Instance.SendMessage("Connected with the {0} server, and it seems to be updated! From V{1}.{2} to V{3}.{4} #MapleStory", GetMapleStoryLocale(locale), oldVersion, oldPatchLocation, version, patchLocation);
             }
 
 
@@ -101,15 +99,33 @@ namespace MWLR_Logging
 
             Logger.WriteLine("Version: {0}; Patch location: '{1}'; Locale: {2}", oldVersion, oldPatchLocation, oldLocale);
 
-            MapleClient = new MapleGlobal(this, version, short.Parse(patchLocation));
+            switch (locale)
+            {
+                case 1: MapleClient = new MapleKorea(this, version, short.Parse(patchLocation)); break;
+                case 7: MapleClient = new MapleSEA(this, version, short.Parse(patchLocation)); break;
+                case 8:
+                    GMSKeys.Initialize(); 
+                    MapleClient = new MapleGlobal(this, version, short.Parse(patchLocation));
+                    break;
+
+            }
+            
 
             State = MapleState.WorldSelect;
             Logger.WriteLine("MapleClient: {0}", MapleClient.ToString());
             MapleClient.HandlingVersion = version;
             MapleClient.sendClientReady();
-            MapleClient.sendWorldListReRequest();
+
             Logger.WriteLine("Done");
+            MapleClient.sendWorldListReRequest();
             connected = true;
+
+            if (lostConnection && lastDisconnect != DateTime.MinValue && (DateTime.Now - lastDisconnect).TotalMinutes > 5)
+            {
+                TwitterClient.Instance.SendMessage("{0} downtime: {1} minutes", GetMapleStoryLocale(locale), (DateTime.Now - lastDisconnect).TotalMinutes);
+            }
+            lastDisconnect = DateTime.MinValue;
+
             lostConnection = false;
         }
 
@@ -122,7 +138,7 @@ namespace MWLR_Logging
                 Logger.WriteLine("We are (still) disconnected (requestWorldList())");
                 if (!didTweet)
                 {
-                    TwitterClient.Instance.SendMessage("Disconnected from the server! :( #sad #bot Trying to reconnect.");
+                    TwitterClient.Instance.SendMessage("Disconnected from the server! Trying to reconnect.");
                     didTweet = true;
                 }
 
@@ -149,6 +165,7 @@ namespace MWLR_Logging
                 connected = true;
                 lostConnection = false;
                 Logger.WriteLine("Connected with MapleStory Server at " + base.IP + ":" + base.Port + "! Waiting for handshake packet..." + (lastDisconnect != DateTime.MinValue ? (DateTime.Now - lastDisconnect).TotalMinutes + " minutes downtime!" : ""));
+
             }
             catch (Exception ex)
             {
@@ -156,18 +173,19 @@ namespace MWLR_Logging
             }
         }
 
-        string GetMapleStoryLocale(byte type)
+        public static string GetMapleStoryLocale(byte type)
         {
             switch (type)
             {
-                case 0x01:
-                case 0x02: return "MapleStory Korea";
+                case 0x01: return "MapleStory Korea";
+                case 0x02: return "MapleStory Korea Test";
                 case 0x03: return "MapleStory Japan";
                 case 0x05: return "Maplestory China/Global Test";
-                case 0x07: return "MapleStory East Asia or Thailand";
+                case 0x06: return "MapleStory Taiwan";
+                //case 0x07: return "MapleStory East Asia or Thailand";
+                case 0x07: return "MapleStory SEA";
                 case 0x08: return "MapleStory Global";
                 case 0x09: return "MapleStory Europe or Brazil";
-                case 0x3C: return "MapleStory Taiwan"; // Incorrect
                 default: return "Unknown Maplestory type (please send Diamondo25 the version name and type)";
             }
 

@@ -13,6 +13,8 @@ namespace WvsBeta.Common.Sessions
         private BinaryReader _binReader;
         private BinaryWriter _binWriter;
 
+        public bool KoreanText { get; set; }
+
         public Packet(byte[] pData)
         {
             _memoryStream = new MemoryStream(pData);
@@ -113,7 +115,11 @@ namespace WvsBeta.Common.Sessions
         public ulong ReadULong() { return _binReader.ReadUInt64(); }
         public double ReadDouble() { return _binReader.ReadDouble(); }
         public float ReadFloat() { return _binReader.ReadSingle(); }
-        public string ReadString(short pLen = -1) { short len = pLen == -1 ? _binReader.ReadInt16() : pLen; return new string(_binReader.ReadChars(len)); }
+        public string ReadString(short pLen = -1)
+        {
+            short len = pLen == -1 ? _binReader.ReadInt16() : pLen;
+            return KoreanText ? Encoding.GetEncoding(949).GetString(_binReader.ReadBytes(len)) : ASCIIEncoding.ASCII.GetString(_binReader.ReadBytes(len));
+        }
 
         public void SetBytes(int pPosition, byte[] val) { int tmp = (int)_memoryStream.Position; Reset(pPosition); _binWriter.Write(val); Reset(tmp); }
         public void SetByte(int pPosition, byte val) { int tmp = (int)_memoryStream.Position; Reset(pPosition); _binWriter.Write(val); Reset(tmp); }

@@ -6,7 +6,7 @@ using System.IO;
 
 namespace MWLR_Logging
 {
-    public static class Logger
+    public class Logger
     {
         public static string Logfile;
 
@@ -32,7 +32,8 @@ namespace MWLR_Logging
         public static void ErrorLog(string pInput, params object[] pParams)
         {
             File.AppendAllText("EXCEPTIONS.txt", string.Format("{0}[{2}]{1}{0}", Environment.NewLine, "-----------------", DateTime.Now) + string.Format(pInput, pParams) + Environment.NewLine);
-            TwitterClient.Instance.SendMessage("@Diamondo25 crap");
+            
+            TwitterClient.Instance.SendMessage("@Diamondo25 crap: '{0}'", pInput.Substring(0, 60));
         }
     }
 }

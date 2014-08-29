@@ -7,12 +7,12 @@ using WvsBeta.Common.Sessions;
 namespace MWLR_Logging.MapleStories
 {
 
-    class MapleGlobal : AbstractMaple
+    class MapleKorea : AbstractMaple
     {
         private short version, subversion;
         private Session _session;
-        public MapleGlobal(Session pSession, short _v, short _sv)
-            : base("GMS", 8)
+        public MapleKorea(Session pSession, short _v, short _sv)
+            : base("KMS", 1)
         {
             _session = pSession;
             this.RequiresVersion = -1;
@@ -22,13 +22,27 @@ namespace MWLR_Logging.MapleStories
             Program.Connection.AmountOnline = 0;
         }
 
+        private void SendCheckedPacket(Packet pPacket)
+        {
+            while (true)
+            {
+                ushort idx = BitConverter.ToUInt16(_session.EncryptIV, 0);
+                if ((idx % 31) == 0)
+                    sendHSKey(CRC32.calcCrc32(_session.EncryptIV, 2));
+                else
+                    break;
+            }
+            _session.SendPacket(pPacket);
+        }
+
         public override void handlePackets(Packet packet)
         {
+            packet.KoreanText = true;
             //Logger.WriteLine("Got packet: {0}", packet.ToString());
             switch (packet.ReadShort())
             {
-                case 0x09: handleWorld(packet); break; // 0x0A
-                case 0x11: sendPong(); break;
+                case 0x03: handleWorld(packet); break; // 0x0A
+                case 0x0C: sendPong(); break; // 0x11
                 //default: Logger.WriteLine("Unknown packet: {0}", packet.ToString()); break;
             }
         }
@@ -54,12 +68,10 @@ namespace MWLR_Logging.MapleStories
             string eventMsg = packet.ReadString(); // Event message
             packet.ReadShort(); // EXP rate
             packet.ReadShort(); // DROP rate
-            packet.ReadByte(); // Unknown
             int channels = packet.ReadByte();
             ichannels += channels;
             if (!gotData)
                 DataBase.UpdateWorldData(ID, name, channels, ribbon, eventMsg);
-
             if (Config.Instance.SkipWorlds.Contains(ID)) return;
 
             List<Channel> channelList = new List<Channel>();
@@ -72,9 +84,10 @@ namespace MWLR_Logging.MapleStories
                 chan.World = packet.ReadByte();
                 chan.ID = packet.ReadByte();
                 chan.ID += 1;
-                Program.Connection.AmountOnline += chan.Population;
                 chan.SpecialValue = packet.ReadByte();
                 channelList.Add(chan);
+
+                Program.Connection.AmountOnline += chan.Population;
 
                 if (OldLoads.ContainsKey(chan.ChannelName) && OldLoads[chan.ChannelName] >= 10 && (chan.Population * 100 / OldLoads[chan.ChannelName]) <= 20)
                 {
@@ -100,56 +113,55 @@ namespace MWLR_Logging.MapleStories
             }
 
             HandleData(channelList);
+
+        }
+
+        public void sendHSInit()
+        {
+            var packet = new Packet();
+            packet.WriteShort(0x25);
+            packet.WriteByte(1);
+            packet.WriteLong(0);
+            SendCheckedPacket(packet);
+        }
+
+        public void sendHSKey(int pValue)
+        {
+            var packet = new Packet();
+            packet.WriteShort(0x25);
+            packet.WriteByte(0);
+            packet.WriteInt(pValue);
+            packet.WriteInt(0);
+            _session.SendPacket(packet);
         }
 
         public override void sendClientReady()
         {
+            sendHSInit();
             Packet packet = new Packet();
-            packet.WriteShort(0x14);
+            packet.WriteShort(0x32);
             packet.WriteByte(_locale);
             packet.WriteShort(version);
             packet.WriteShort(subversion);
-            _session.SendPacket(packet);
+            SendCheckedPacket(packet);
         }
 
         public override void sendWorldListReRequest()
         {
             Packet packet = new Packet();
-            // packet.WriteShort(0x19);
-            packet.WriteShort(0x1A);
-            _session.SendPacket(packet);
+            packet.WriteShort(0x19);
+            SendCheckedPacket(packet);
         }
 
 
         public override void sendPong()
         {
             Packet packet = new Packet();
-            if (HandlingVersion >= 153)
-                packet.WriteShort(0x46);
-            else if (HandlingVersion >= 145)
-                packet.WriteShort(0x45);
-            else if (HandlingVersion >= 143)
-                packet.WriteShort(0x46);
-            else if (HandlingVersion >= 118)
-                packet.WriteShort(0x2D);
-            else if (HandlingVersion >= 115)
-                packet.WriteShort(0x2C);
-            else if (HandlingVersion >= 101)
-                packet.WriteShort(0x2E);
-            else if (HandlingVersion >= 99)
-                packet.WriteShort(0x1B);
-            else if (HandlingVersion >= 86)
-                packet.WriteShort(0x1A);
-            else if (HandlingVersion >= 83)
-                packet.WriteShort(0x19);
-            else
-                packet.WriteShort(0x18);
-
-
-            if (HandlingVersion >= 143)
-                packet.WriteInt(0);
-
-            _session.SendPacket(packet);
+            packet.WriteShort(0x39);
+            packet.WriteShort(0); // Same as MSEA?
+            packet.WriteInt(0); // 0
+            packet.WriteInt(0); // Random ? 
+            SendCheckedPacket(packet);
         }
     }
 }

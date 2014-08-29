@@ -56,11 +56,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Config.cs" />
+    <Compile Include="CRC32.cs" />
     <Compile Include="DataBase.cs" />
     <Compile Include="Logger.cs" />
     <Compile Include="MapleConnection.cs" />
     <Compile Include="MapleServerConnector.cs" />
     <Compile Include="MapleStories\AbstractMaple.cs" />
+    <Compile Include="MapleStories\MapleKorea.cs" />
+    <Compile Include="MapleStories\MapleSEA.cs" />
     <Compile Include="MapleStories\MapleGlobal.cs" />
     <Compile Include="Packets\AbstractConnection.cs" />
     <Compile Include="Packets\GMSKeys.cs" />

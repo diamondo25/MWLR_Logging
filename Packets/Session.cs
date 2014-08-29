@@ -37,6 +37,8 @@ namespace WvsBeta.Common.Sessions
         /// </summary>
         private byte[] _encryptIV;
 
+        public byte[] EncryptIV { get { return _encryptIV; } }
+
 
         /// <summary>
         /// Buffer used for receiving packets.
@@ -107,6 +109,7 @@ namespace WvsBeta.Common.Sessions
         public void Connect()
         {
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            _socket.SendTimeout = 5000;
             Disconnected = true;
             _mapleVersion = 0;
             _encryption = false;
@@ -114,13 +117,13 @@ namespace WvsBeta.Common.Sessions
             {
                 _socket.Connect(IP, Port);
 
-                Console.WriteLine(TypeName + " Connected with server!");
+                MWLR_Logging.Logger.WriteLine(TypeName + " Connected with server!");
                 Disconnected = false;
                 StartReading(2, true);
             }
             catch (Exception ex)
             {
-                Console.WriteLine(TypeName + " [ERROR] Could not connect to server @ {0}:{1}: {2}", IP, Port, ex.Message);
+                MWLR_Logging.Logger.WriteLine(TypeName + " [ERROR] Could not connect to server @ {0}:{1}: {2}", IP, Port, ex.Message);
                 throw ex;
             }
 
@@ -136,7 +139,7 @@ namespace WvsBeta.Common.Sessions
             catch
             {
             }
-            Console.WriteLine(TypeName + " Manual disconnection!");
+            MWLR_Logging.Logger.WriteLine(TypeName + " Manual disconnection!");
             OnDisconnectINTERNAL();
         }
 
@@ -167,7 +170,7 @@ namespace WvsBeta.Common.Sessions
             }
             catch (Exception ex)
             {
-                Console.WriteLine(TypeName + " [ERROR] ContinueReading(): {0}", ex.ToString());
+                MWLR_Logging.Logger.WriteLine(TypeName + " [ERROR] ContinueReading(): {0}", ex.ToString());
                 OnDisconnectINTERNAL();
             }
         }
@@ -185,12 +188,12 @@ namespace WvsBeta.Common.Sessions
             }
             catch (Exception ex)
             {
-                Console.WriteLine(TypeName + " : " + ex.ToString());
+                MWLR_Logging.Logger.WriteLine(TypeName + " : " + ex.ToString());
                 amountReceived = 0;
             }
             if (amountReceived == 0)
             {
-                // We got a disWvsBeta.Common.Sessions here!
+                // We got a disconnection here!
                 OnDisconnectINTERNAL();
                 return;
             }
@@ -225,7 +228,7 @@ namespace WvsBeta.Common.Sessions
                         Packet packet;
                         if (_encryption)
                         {
-                            _buffer = Decrypt(_buffer);
+                            _buffer = Decrypt(_buffer, _mapleLocale == 1);
                             packet = new Packet(_buffer);
 
                             DoAction((date) =>
@@ -236,7 +239,7 @@ namespace WvsBeta.Common.Sessions
                                 }
                                 catch (Exception ex)
                                 {
-                                    Console.WriteLine("Handling Packet Error: {0}", ex.ToString());
+                                    MWLR_Logging.Logger.WriteLine("Handling Packet Error: {0}", ex.ToString());
                                 }
                             });
                         }
@@ -246,15 +249,40 @@ namespace WvsBeta.Common.Sessions
                             packet = new Packet(_buffer);
 
                             _mapleVersion = packet.ReadUShort();
-                            _maplePatchLocation = _maplePatchLocation = packet.ReadString();
+                            _maplePatchLocation = packet.ReadString();
                             _encryptIV = packet.ReadBytes(4);
                             _decryptIV = packet.ReadBytes(4);
                             _mapleLocale = packet.ReadByte();
-                            Console.WriteLine(TypeName + " MapleVersion: {0}; Patch Location: {1}; Locale: {2}", _mapleVersion, _maplePatchLocation, _mapleLocale);
 
-                            if (_mapleLocale == 8 && _mapleVersion >= 118)
+                            MWLR_Logging.Logger.WriteLine(TypeName + " MapleVersion: {0}; Patch Location: {1}; Locale: {2}", _mapleVersion, _maplePatchLocation, _mapleLocale);
+
+                            if (_mapleLocale == 1)
                             {
-                                SwitchAESByVersion(_mapleVersion);
+                                int test = int.Parse(_maplePatchLocation);
+                                ushort t1 = (ushort)(test & 0x7FFF);
+                                int t2 = (test >> 15) & 1;
+                                int t3 = (test >> 16) & 0xFF;
+                                MWLR_Logging.Logger.WriteLine("Logging KMS connection. Version {0} | {1} | {2}", t1, t2, t3);
+                                _mapleVersion = t1;
+                                _maplePatchLocation = t3.ToString();
+                            }
+                            else if (_mapleLocale == 8 && _mapleVersion >= 118)
+                            {
+                                if (!MWLR_Logging.GMSKeys.ContainsKey(_mapleVersion))
+                                    MWLR_Logging.GMSKeys.Initialize();
+
+                                if (MWLR_Logging.GMSKeys.ContainsKey(_mapleVersion)) 
+                                {
+                                    SwitchAESByVersion(_mapleVersion);
+                                }
+                                else
+                                {
+                                    MWLR_Logging.Logger.WriteLine("There's no key for this version, yet.");
+                                    MWLR_Logging.TwitterClient.Instance.SendMessage("HEY, @Diamondo25! Update da keyzz!!");
+                                    
+                                    Disconnect();
+                                    System.Threading.Thread.Sleep(15 * 60 * 1000);
+                                }
                             }
 
                             packet.Reset();
@@ -266,7 +294,7 @@ namespace WvsBeta.Common.Sessions
                                 }
                                 catch (Exception ex)
                                 {
-                                    Console.WriteLine("Handling Packet Error: {0}", ex.ToString());
+                                    MWLR_Logging.Logger.WriteLine("Handling Packet Error: {0}", ex.ToString());
                                 }
                             });
                         }
@@ -282,12 +310,12 @@ namespace WvsBeta.Common.Sessions
             }
             catch (SocketException socketException)
             {
-                Console.WriteLine(TypeName + " Socket Exception while receiving data: {0}", socketException.Message);
+                MWLR_Logging.Logger.WriteLine(TypeName + " Socket Exception while receiving data: {0}", socketException.Message);
                 OnDisconnectINTERNAL();
             }
             catch (Exception ex)
             {
-                Console.WriteLine(TypeName + " [ERROR] EndReading(): {0}", ex.ToString());
+                MWLR_Logging.Logger.WriteLine(TypeName + " [ERROR] EndReading(): {0}", ex.ToString());
                 OnDisconnectINTERNAL();
             }
         }
@@ -314,76 +342,39 @@ namespace WvsBeta.Common.Sessions
             }
             else
             {
-                pData = Encrypt(pData);
+                pData = Encrypt(pData, _mapleLocale == 1);
             }
             try
             {
                 int sent = _socket.Send(pData);
                 if (sent != pData.Length)
                 {
-                    Console.WriteLine(TypeName + " [ERROR] Error while sending data: not all bytes transferred: only {0} of {1} sent!", sent, pData.Length);
+                    MWLR_Logging.Logger.WriteLine(TypeName + " [ERROR] Error while sending data: not all bytes transferred: only {0} of {1} sent!", sent, pData.Length);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine(TypeName + " [ERROR] Failed sending: {0}", ex.ToString());
+                MWLR_Logging.Logger.WriteLine(TypeName + " [ERROR] Failed sending: {0}", ex.ToString());
                 OnDisconnectINTERNAL();
             }
         }
 
-        public string PrintPacket(Packet pPacket, string pWhat, bool ret = false) { return PrintPacket(pWhat, pPacket.ToArray(), false); }
-        public string PrintPacket(string pWhat, byte[] pData, bool ret = false)
-        {
-            /*
-            DateTime now = DateTime.Now;
-            string buf = "[" + now.ToString("R") + "][" + TypeName + "] " + "(len: " + pData.Length + ")" + pWhat + " [";
-            foreach (byte b in pData)
-            {
-                buf += string.Format("{0:X2} ", b);
-            }
-            buf = buf.Trim();
-            buf += "]";
-            Console.WriteLine(buf);
-            */
-            return "";
-        }
-
-        Random rnd = new Random();
-        public void SendHandshake(ushort pVersion, string pPatchLocation, byte pLocale)
-        {
-            _encryptIV = new byte[4];
-            rnd.NextBytes(_encryptIV);
-            _decryptIV = new byte[4];
-            rnd.NextBytes(_decryptIV);
-
-            Packet packet = new Packet();
-            packet.WriteUShort(pVersion);
-            packet.WriteString(pPatchLocation);
-            packet.WriteBytes(_decryptIV);
-            packet.WriteBytes(_encryptIV);
-            packet.WriteByte(pLocale);
-            SendPacket(packet);
-            _mapleVersion = pVersion;
-            _maplePatchLocation = pPatchLocation;
-            _mapleLocale = pLocale;
-        }
-
         public virtual void OnPacketInbound(Packet pPacket)
         {
-            Console.WriteLine(TypeName + " No Handler for 0x{0:X4}", pPacket.ReadUShort());
+            MWLR_Logging.Logger.WriteLine(TypeName + " No Handler for 0x{0:X4}", pPacket.ReadUShort());
         }
 
         public virtual void OnHandshakeInbound(Packet pPacket)
         {
-            Console.WriteLine(TypeName + " No Handshake Handler.");
+            MWLR_Logging.Logger.WriteLine(TypeName + " No Handshake Handler.");
         }
 
         private void OnDisconnectINTERNAL()
         {
             if (Disconnected) return;
             Disconnected = true;
-            Console.WriteLine(TypeName + " Called by:");
-            Console.WriteLine(Environment.StackTrace);
+            MWLR_Logging.Logger.WriteLine(TypeName + " Called by:");
+            MWLR_Logging.Logger.WriteLine(Environment.StackTrace);
             DoAction((date) =>
             {
                 OnDisconnect();
@@ -394,9 +385,9 @@ namespace WvsBeta.Common.Sessions
         {
             if (Disconnected) return;
             Disconnected = true;
-            Console.WriteLine(TypeName + " Called by:");
-            Console.WriteLine(Environment.StackTrace);
-            Console.WriteLine(TypeName + " No Disconnect Handler.");
+            MWLR_Logging.Logger.WriteLine(TypeName + " Called by:");
+            MWLR_Logging.Logger.WriteLine(Environment.StackTrace);
+            MWLR_Logging.Logger.WriteLine(TypeName + " No Disconnect Handler.");
         }
 
         #region Encryption Stuff
@@ -427,16 +418,22 @@ namespace WvsBeta.Common.Sessions
         /// </summary>
         /// <param name="pData">Data to be encrypted (without header!)</param>
         /// <returns>Encrypted data (with header!)</returns>
-        private byte[] Encrypt(byte[] pData)
+        private byte[] Encrypt(byte[] pData, bool pKMS)
         {
             // Include header
             byte[] data = new byte[pData.Length + 4];
 
             GenerateHeader(data, _encryptIV, pData.Length, _mapleVersion, _receivingFromServer);
 
-            EncryptMSCrypto(pData);
-            AESTransform(pData, _encryptIV);
-            NextIV(_encryptIV);
+            if (pKMS)
+                KMSTransform(pData, ref _encryptIV, true);
+            else
+            {
+                if ((MapleLocale == 8 && MapleVersion < 149) || MapleLocale != 8)
+                    EncryptMSCrypto(pData);
+                AESTransform(pData, _encryptIV);
+                NextIV(_encryptIV);
+            }
             Buffer.BlockCopy(pData, 0, data, 4, pData.Length);
 
             return data;
@@ -447,11 +444,17 @@ namespace WvsBeta.Common.Sessions
         /// </summary>
         /// <param name="pData">Data to be decrypted</param>
         /// <returns>Decrypted data</returns>
-        private byte[] Decrypt(byte[] pData)
+        private byte[] Decrypt(byte[] pData, bool pKMS)
         {
-            AESTransform(pData, _decryptIV);
-            NextIV(_decryptIV);
-            DecryptMSCrypto(pData);
+            if (pKMS)
+                KMSTransform(pData, ref _decryptIV, false);
+            else
+            {
+                AESTransform(pData, _decryptIV);
+                if ((MapleLocale == 8 && MapleVersion < 149) || MapleLocale != 8)
+                    DecryptMSCrypto(pData);
+                NextIV(_decryptIV);
+            }
             return pData;
         }
     
@@ -560,14 +563,46 @@ namespace WvsBeta.Common.Sessions
         }
 
         /// <summary>
+        /// Transforms the buffer using KMS algorithm
+        /// </summary>
+        /// <param name="pBuffer"></param>
+        public void KMSTransform(byte[] pBuffer, ref byte[] pIV, bool pEncrypt)
+        {
+            byte[] oudeIV = new byte[4];
+            Buffer.BlockCopy(pIV, 0, oudeIV, 0, 4);
+            for (int i = 0; i < pBuffer.Length; i++)
+            {
+                if (pEncrypt)
+                {
+                    byte v7 = pBuffer[i];
+                    pBuffer[i] = (byte)(sShiftKey[pIV[0]] ^ (((0x10 * v7 | (v7 >> 4)) >> 1) & 0x55 | 2 * ((0x10 * v7 | (v7 >> 4)) & 0xD5)));
+                    Morph(v7, pIV);
+                }
+                else
+                {
+                    byte v7 = (byte)(pBuffer[i] ^ sShiftKey[pIV[0]]);
+                    byte v8 = (byte)((v7 >> 1) & 0x55 | 2 * (v7 & 0xD5));
+                    pBuffer[i] = (byte)(0x10 * v8 | (v8 >> 4));
+                    Morph(pBuffer[i], pIV);
+                }
+            }
+
+            NextIV(oudeIV);
+            Buffer.BlockCopy(oudeIV, 0, pIV, 0, 4);
+        }
+
+        /// <summary>
         /// Generates a new IV code for AES and header generation. It will reset the oldIV with the newIV automatically.
         /// </summary>
         /// <param name="pOldIV">The old IV that is used already.</param>
-        private static void NextIV(byte[] pOldIV)
+        public static void NextIV(byte[] pOldIV)
         {
             byte[] newIV = new byte[] { 0xF2, 0x53, 0x50, 0xC6 };
             for (var i = 0; i < 4; i++)
             {
+                /*
+                Morph(newIV, pOldIV[i]);
+                */
                 byte input = pOldIV[i];
                 byte tableInput = sShiftKey[input];
                 newIV[0] += (byte)(sShiftKey[newIV[1]] - input);
@@ -585,6 +620,41 @@ namespace WvsBeta.Common.Sessions
                 newIV[3] = (byte)((val2 >> 24) & 0xFF);
             }
             Buffer.BlockCopy(newIV, 0, pOldIV, 0, 4);
+        }
+
+        public static void Morph(byte pValue, byte[] pIV)
+        {
+            byte a = pIV[1];
+            byte b = a;
+            uint c, d;
+            b = sShiftKey[b];
+            b -= pValue;
+            pIV[0] += b;
+            b = pIV[2];
+            b ^= sShiftKey[pValue];
+            a -= b;
+            pIV[1] = a;
+            a = pIV[3];
+            b = a;
+            a -= pIV[0];
+            b = sShiftKey[b];
+            b += pValue;
+            b ^= pIV[2];
+            pIV[2] = b;
+            a += sShiftKey[pValue];
+            pIV[3] = a;
+
+            c = (uint)(pIV[0] + pIV[1] * 0x100 + pIV[2] * 0x10000 + pIV[3] * 0x1000000);
+            d = c;
+            c >>= 0x1D;
+            d <<= 0x03;
+            c |= d;
+            pIV[0] = (byte)(c % 0x100);
+            c /= 0x100;
+            pIV[1] = (byte)(c % 0x100);
+            c /= 0x100;
+            pIV[2] = (byte)(c % 0x100);
+            pIV[3] = (byte)(c / 0x100);
         }
 
         /// <summary>
@@ -641,14 +711,14 @@ namespace WvsBeta.Common.Sessions
         /// 'Secret' 8 * 4 byte long key used for AES encryption.
         /// </summary>
         private static byte[] sSecretKey = new byte[] {
-            0x6D, 0x00, 0x00, 0x00,// 0xCC, 0x00, 0x00, 0x00, 0xFD, 0x00, 0x00, 0x00, 0x99, 0x00, 0x00, 0x00,
-            0x23, 0x00, 0x00, 0x00,// 0x3E, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, 0x43, 0x00, 0x00, 0x00,
-            0x13, 0x00, 0x00, 0x00,// 0x47, 0x00, 0x00, 0x00, 0xA4, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00,
-            0xE9, 0x00, 0x00, 0x00,// 0x54, 0x00, 0x00, 0x00, 0xAB, 0x00, 0x00, 0x00, 0xBC, 0x00, 0x00, 0x00,
-            0xEE, 0x00, 0x00, 0x00,// 0x9B, 0x00, 0x00, 0x00, 0x4F, 0x00, 0x00, 0x00, 0xD3, 0x00, 0x00, 0x00,
-            0x27, 0x00, 0x00, 0x00,// 0x60, 0x00, 0x00, 0x00, 0x59, 0x00, 0x00, 0x00, 0xCF, 0x00, 0x00, 0x00,
-            0xA8, 0x00, 0x00, 0x00,// 0xF2, 0x00, 0x00, 0x00, 0xAB, 0x00, 0x00, 0x00, 0x4B, 0x00, 0x00, 0x00,
-            0xCF, 0x00, 0x00, 0x00,// 0xEB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x31, 0x00, 0x00, 0x00,
+            0x13, 0x00, 0x00, 0x00, 
+            0x08, 0x00, 0x00, 0x00, 
+            0x06, 0x00, 0x00, 0x00, 
+            0xB4, 0x00, 0x00, 0x00, 
+            0x1B, 0x00, 0x00, 0x00, 
+            0x0F, 0x00, 0x00, 0x00, 
+            0x33, 0x00, 0x00, 0x00, 
+            0x52, 0x00, 0x00, 0x00, 
         };
 
         private static RijndaelManaged _rijndaelAES = new RijndaelManaged();

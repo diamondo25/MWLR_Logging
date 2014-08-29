@@ -6,13 +6,13 @@ using WvsBeta.Common.Sessions;
 
 namespace MWLR_Logging.MapleStories
 {
-
-    class MapleGlobal : AbstractMaple
+    class MapleSEA : AbstractMaple
     {
         private short version, subversion;
         private Session _session;
-        public MapleGlobal(Session pSession, short _v, short _sv)
-            : base("GMS", 8)
+
+        public MapleSEA(Session pSession, short _v, short _sv)
+            : base("SEA", 7)
         {
             _session = pSession;
             this.RequiresVersion = -1;
@@ -22,14 +22,26 @@ namespace MWLR_Logging.MapleStories
             Program.Connection.AmountOnline = 0;
         }
 
+        private void SendCheckedPacket(Packet pPacket)
+        {
+            while (true)
+            {
+                ushort idx = BitConverter.ToUInt16(_session.EncryptIV, 0);
+                if ((idx % 31) == 0)
+                    sendHSKey(CRC32.calcCrc32(_session.EncryptIV, 2));
+                else
+                    break;
+            }
+            _session.SendPacket(pPacket);
+        }
+
         public override void handlePackets(Packet packet)
         {
             //Logger.WriteLine("Got packet: {0}", packet.ToString());
             switch (packet.ReadShort())
             {
-                case 0x09: handleWorld(packet); break; // 0x0A
-                case 0x11: sendPong(); break;
-                //default: Logger.WriteLine("Unknown packet: {0}", packet.ToString()); break;
+                case 0x06: handleWorld(packet); break; // 0x0A
+                case 0x0F: sendPong(); break;
             }
         }
 
@@ -54,7 +66,7 @@ namespace MWLR_Logging.MapleStories
             string eventMsg = packet.ReadString(); // Event message
             packet.ReadShort(); // EXP rate
             packet.ReadShort(); // DROP rate
-            packet.ReadByte(); // Unknown
+
             int channels = packet.ReadByte();
             ichannels += channels;
             if (!gotData)
@@ -104,52 +116,55 @@ namespace MWLR_Logging.MapleStories
 
         public override void sendClientReady()
         {
-            Packet packet = new Packet();
-            packet.WriteShort(0x14);
+            sendHSInit();
+            var packet = new Packet();
+            if (version >= 139)
+                packet.WriteShort(0x3D);
+            else
+                packet.WriteShort(0x3C);
             packet.WriteByte(_locale);
             packet.WriteShort(version);
             packet.WriteShort(subversion);
+            SendCheckedPacket(packet);
+        }
+
+        public void sendHSInit()
+        {
+            var packet = new Packet();
+            packet.WriteShort(0x2D);
+            packet.WriteByte(1);
+            packet.WriteLong(0);
+            SendCheckedPacket(packet);
+        }
+
+        public void sendHSKey(int pValue)
+        {
+            var packet = new Packet();
+            packet.WriteShort(0x2D);
+            packet.WriteByte(0);
+            packet.WriteInt(pValue);
+            packet.WriteInt(0);
             _session.SendPacket(packet);
         }
 
         public override void sendWorldListReRequest()
         {
             Packet packet = new Packet();
-            // packet.WriteShort(0x19);
-            packet.WriteShort(0x1A);
-            _session.SendPacket(packet);
+            packet.WriteShort(0x19);
+            SendCheckedPacket(packet);
         }
-
 
         public override void sendPong()
         {
             Packet packet = new Packet();
-            if (HandlingVersion >= 153)
-                packet.WriteShort(0x46);
-            else if (HandlingVersion >= 145)
-                packet.WriteShort(0x45);
-            else if (HandlingVersion >= 143)
-                packet.WriteShort(0x46);
-            else if (HandlingVersion >= 118)
-                packet.WriteShort(0x2D);
-            else if (HandlingVersion >= 115)
-                packet.WriteShort(0x2C);
-            else if (HandlingVersion >= 101)
-                packet.WriteShort(0x2E);
-            else if (HandlingVersion >= 99)
-                packet.WriteShort(0x1B);
-            else if (HandlingVersion >= 86)
-                packet.WriteShort(0x1A);
-            else if (HandlingVersion >= 83)
-                packet.WriteShort(0x19);
+            if (version >= 139)
+                packet.WriteShort(0x44);
             else
-                packet.WriteShort(0x18);
-
-
-            if (HandlingVersion >= 143)
-                packet.WriteInt(0);
-
-            _session.SendPacket(packet);
+                packet.WriteShort(0x43);
+            packet.WriteInt(0);
+            packet.WriteShort(0);
+            SendCheckedPacket(packet);
         }
+
     }
 }

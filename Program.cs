@@ -4,14 +4,17 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 
+using System.IO;
+using System.Net;
 using WvsBeta.Common.Sessions;
 
 namespace MWLR_Logging
 {
     class Program
     {
-        public static string mCurrentDate { get; set; }
+        public static string CurrentDate { get; set; }
         public static long CurrentTime { get; set; }
+        public static long TweetCurrentTime { get; set; }
         public static int mTotalOnline { get; set; }
         public static byte mIlol { get; set; }
         public static bool IgnoreDataTemp { get; set; }
@@ -23,10 +26,12 @@ namespace MWLR_Logging
         {
             DateTime now = DateTime.Now;
 
-            Program.mCurrentDate = now.ToString("yyyy-MM-dd HH:mm:ss");
-            now = now.AddHours(-1);
-            var epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-            Program.CurrentTime = (long)((now - epoch).TotalSeconds);
+            Program.CurrentDate = now.ToString("yyyy-MM-dd HH:mm:ss");
+            TimeSpan span = (now - new DateTime(1970, 1, 1, 0, 0, 0, 0).ToLocalTime());
+
+            //return the total seconds (which is a UNIX timestamp)
+            Program.CurrentTime = (long)span.TotalSeconds;
+            Program.TweetCurrentTime = Program.CurrentTime - (60 * 60); // 1 hour diff
         }
 
         static void Main(string[] args)
@@ -40,7 +45,6 @@ namespace MWLR_Logging
             {
                 Config.ConfigName = args[0];
             }
-            GMSKeys.Initialize();
 
             Config.Load();
             try
@@ -109,7 +113,7 @@ namespace MWLR_Logging
                             if (lineargs.Length > 1)
                             {
                                 Packet pw = new Packet();
-                                pw.WriteHexString(string.Join(" ", lineargs));
+                                pw.WriteHexString(string.Join(" ", lineargs, 1, lineargs.Length - 1));
                                 Connection.SendPacket(pw);
                             }
                             break;
@@ -117,6 +121,48 @@ namespace MWLR_Logging
                     default: Logger.WriteLine("Unknown command. Use help. Command: {0}", line); break;
                 }
             }
+        }
+
+
+
+        public static string Login(string pUsername, string pPassword)
+        {
+            string key = "";
+            string input = "userID=" + pUsername + "&password=" + pPassword;
+            byte[] content = Encoding.ASCII.GetBytes(input);
+            HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://www.nexon.net/api/v001/account/login");
+            req.Method = "POST";
+            req.ContentType = "application/x-www-form-urlencoded";
+            req.UserAgent = "MWLR/1.0.0 by CraftNet";
+            req.ContentLength = content.Length;
+
+            req.GetRequestStream().Write(content, 0, content.Length);
+            try
+            {
+                using (var response = (HttpWebResponse)req.GetResponse())
+                {
+                    if (response != null)
+                    {
+                        string herp = response.Headers["Set-Cookie"].ToString();
+                        int len = herp.IndexOf("NPPv2=") + "NPPv2=".Length;
+                        herp = herp.Substring(len);
+                        herp = herp.Substring(0, herp.IndexOf(';', len));
+                        key = herp;
+                    }
+                    else
+                    {
+                        Logger.WriteLine("Invalid credentials, I guess..");
+                    }
+                }
+            }
+            catch (System.Net.WebException ex)
+            {
+                StreamReader sr = new StreamReader(ex.Response.GetResponseStream());
+                System.IO.File.WriteAllText("err.txt", sr.ReadToEnd());
+                Logger.WriteLine("!!!!!! Invalid credentials!", ex.ToString());
+
+            }
+            return key;
         }
     }
 }

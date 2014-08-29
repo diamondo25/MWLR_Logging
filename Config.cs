@@ -42,8 +42,6 @@ namespace MWLR_Logging
                     Instance.SkipWorlds = new List<byte>();
                     Environment.Exit(1);
                 }
-                if (Instance.SkipWorlds.Count == 0)
-                    Instance.SkipWorlds.Add(133);
                 Save();
                 Logger.WriteLine("Loaded!");
             }

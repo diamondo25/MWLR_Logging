@@ -78,13 +78,19 @@ namespace MWLR_Logging
             Logger.WriteLine("Done. {0} keys loaded", MapleStoryGlobalKeys.Count);
         }
 
+        public static bool ContainsKey(ushort pVersion)
+        {
+            return MapleStoryGlobalKeys.ContainsKey(pVersion);
+        }
+
         public static byte[] GetKeyForVersion(ushort pVersion)
         {
             // Get first version known
             for (; pVersion > 0; pVersion--)
             {
-                if (MapleStoryGlobalKeys.ContainsKey(pVersion))
+                if (ContainsKey(pVersion))
                 {
+                    Logger.WriteLine("Using key for version {0}", pVersion);
                     byte[] key = MapleStoryGlobalKeys[pVersion];
                     byte[] ret = new byte[32];
                     for (int i = 0; i < 8; i++)
